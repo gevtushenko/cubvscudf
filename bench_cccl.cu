@@ -19,6 +19,7 @@ cccl_iterator_t make_device_pointer_iterator(void *ptr,
   iter.advance.type = cccl_op_kind_t::CCCL_PLUS;
   iter.dereference.type = cccl_op_kind_t::CCCL_IDENTITY;
   iter.value_type.size = sizeof(uint8_t);
+  iter.value_type.alignment = alignof(uint8_t);
   iter.value_type.type = value_type;
   iter.state = ptr;
   iter.host_advance = nullptr;
@@ -70,9 +71,10 @@ void bench_cccl_transform_uppercase(nvbench::state &state) {
 
   // Define the uppercase transformation operator using C++ source
   std::string cpp_source = R"(
+    #include <cuda/std/cstdint>
     extern "C" __device__ void op(void* input, void* output) {
-      uint8_t* in = (uint8_t*)input;
-      uint8_t* out = (uint8_t*)output;
+      cuda::std::uint8_t* in = (cuda::std::uint8_t*)input;
+      cuda::std::uint8_t* out = (cuda::std::uint8_t*)output;
       *out = ((*in >= 97) && (*in <= 122)) ? (*in - 32) : *in;
     }
   )";
@@ -106,14 +108,16 @@ void bench_cccl_transform_uppercase(nvbench::state &state) {
   cudaDeviceGetAttribute(&cc_minor, cudaDevAttrComputeCapabilityMinor, 0);
 
   // Get include paths from our CCCL installation
-  std::string cub_path = std::string(CCCL_INCLUDE_PATH) + "/cub";
-  std::string thrust_path = std::string(CCCL_INCLUDE_PATH) + "/thrust";
+  std::string cub_path = "-I" + std::string(CCCL_INCLUDE_PATH) + "/cub";
+  std::string thrust_path = "-I" + std::string(CCCL_INCLUDE_PATH) + "/thrust";
   std::string libcudacxx_path =
-      std::string(CCCL_INCLUDE_PATH) + "/libcudacxx/include";
+      "-I" + std::string(CCCL_INCLUDE_PATH) + "/libcudacxx/include";
+  std::string ctk_path = "-I" + std::string(CTK_INCLUDE_PATH);
 
   CUresult build_res = cccl_device_unary_transform_build(
       &build_result, input_iter, output_iter, op, cc_major, cc_minor,
-      cub_path.c_str(), thrust_path.c_str(), libcudacxx_path.c_str(), ctk_path);
+      cub_path.c_str(), thrust_path.c_str(), libcudacxx_path.c_str(),
+      ctk_path.c_str());
 
   if (build_res != CUDA_SUCCESS) {
     state.skip("Failed to build CCCL transform");

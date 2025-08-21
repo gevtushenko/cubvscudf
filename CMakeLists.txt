@@ -105,7 +105,7 @@ add_custom_target(cccl_lib ALL
 # Create an interface library for CCCL
 add_library(cccl.c.parallel INTERFACE)
 target_include_directories(cccl.c.parallel INTERFACE ${CCCL_SOURCE_DIR}/c/parallel/include)
-target_compile_definitions(cccl.c.parallel INTERFACE CCCL_C_EXPERIMENTAL CCCL_INCLUDE_PATH="${CCCL_SOURCE_DIR}")
+target_compile_definitions(cccl.c.parallel INTERFACE CCCL_C_EXPERIMENTAL CCCL_INCLUDE_PATH="${CCCL_SOURCE_DIR}" CTK_INCLUDE_PATH="${CUDAToolkit_INCLUDE_DIRS}")
 target_link_libraries(cccl.c.parallel INTERFACE ${CMAKE_BINARY_DIR}/libcccl.c.parallel.so CUDA::nvrtc CUDA::cudart)
 add_dependencies(cccl.c.parallel cccl_lib)
 
