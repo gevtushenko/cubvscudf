@@ -46,12 +46,13 @@ CPMAddPackage(
   GIT_SHALLOW TRUE
 )
 
-# Add CCCL
+# Add CCCL (under different name to avoid conflicts with cuDF's CCCL)
 CPMAddPackage(
-  NAME cccl
+  NAME cccl_cpp
   GITHUB_REPOSITORY gevtushenko/cccl
   GIT_TAG cccl.cpp
   GIT_SHALLOW TRUE
+  SOURCE_DIR ${CMAKE_BINARY_DIR}/_deps/cccl_cpp-src
 )
 
 if(rapids-cmake_ADDED)
@@ -81,8 +82,8 @@ target_compile_options(bench_cudf
     $<$<COMPILE_LANGUAGE:CUDA>:--expt-extended-lambda --expt-relaxed-constexpr>
 )
 
-# Create CCCL benchmark executable
-add_executable(bench_cccl bench_cccl.cu)
+# Create CCCL benchmark executable with wrapper
+add_executable(bench_cccl bench_cccl.cu cccl_c_wrapper.cu)
 
 set_target_properties(bench_cccl PROPERTIES
   CUDA_ARCHITECTURES "${CMAKE_CUDA_ARCHITECTURES}"
@@ -90,8 +91,18 @@ set_target_properties(bench_cccl PROPERTIES
   POSITION_INDEPENDENT_CODE ON
 )
 
-# Link with CCCL (Thrust), and nvbench
-target_link_libraries(bench_cccl PRIVATE CCCL::Thrust nvbench::nvbench)
+# Link with our custom CCCL C API, and nvbench
+target_include_directories(bench_cccl PRIVATE 
+  ${cccl_cpp_SOURCE_DIR}/c/parallel/include
+  ${cccl_cpp_SOURCE_DIR}/thrust 
+  ${cccl_cpp_SOURCE_DIR}/cub 
+  ${cccl_cpp_SOURCE_DIR}/libcudacxx/include
+)
+
+# For now, we'll skip building the CCCL C library due to conflicts
+# Just use the headers and link against required CUDA libraries
+target_compile_definitions(bench_cccl PRIVATE CMAKE_SOURCE_DIR="${CMAKE_SOURCE_DIR}" CCCL_C_EXPERIMENTAL)
+target_link_libraries(bench_cccl PRIVATE nvbench::nvbench cuda cudart nvrtc nvJitLink)
 
 # Compiler flags for CCCL benchmark
 target_compile_options(bench_cccl
