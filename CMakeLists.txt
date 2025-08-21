@@ -46,6 +46,14 @@ CPMAddPackage(
   GIT_SHALLOW TRUE
 )
 
+# Add CCCL
+CPMAddPackage(
+  NAME cccl
+  GITHUB_REPOSITORY gevtushenko/cccl
+  GIT_TAG cccl.cpp
+  GIT_SHALLOW TRUE
+)
+
 if(rapids-cmake_ADDED)
   list(APPEND CMAKE_MODULE_PATH "${rapids-cmake_SOURCE_DIR}/rapids-cmake")
   include(rapids-cmake)
@@ -55,20 +63,38 @@ endif()
 # For now, disable CMake's automatic module scanning for C++ files
 set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
-# Create executable
-add_executable(cubvscudf main.cu)
+# Create cuDF benchmark executable
+add_executable(bench_cudf bench_cudf.cu)
 
-set_target_properties(cubvscudf PROPERTIES
+set_target_properties(bench_cudf PROPERTIES
   CUDA_ARCHITECTURES "${CMAKE_CUDA_ARCHITECTURES}"
   CUDA_SEPARABLE_COMPILATION ON
   POSITION_INDEPENDENT_CODE ON
 )
 
 # Link with cuDF and nvbench
-target_link_libraries(cubvscudf PRIVATE cudf::cudf nvbench::nvbench)
+target_link_libraries(bench_cudf PRIVATE cudf::cudf nvbench::nvbench)
 
-# Compiler flags
-target_compile_options(cubvscudf
+# Compiler flags for cuDF benchmark
+target_compile_options(bench_cudf
+  PRIVATE
+    $<$<COMPILE_LANGUAGE:CUDA>:--expt-extended-lambda --expt-relaxed-constexpr>
+)
+
+# Create CCCL benchmark executable
+add_executable(bench_cccl bench_cccl.cu)
+
+set_target_properties(bench_cccl PROPERTIES
+  CUDA_ARCHITECTURES "${CMAKE_CUDA_ARCHITECTURES}"
+  CUDA_SEPARABLE_COMPILATION ON
+  POSITION_INDEPENDENT_CODE ON
+)
+
+# Link with CCCL (Thrust), and nvbench
+target_link_libraries(bench_cccl PRIVATE CCCL::Thrust nvbench::nvbench)
+
+# Compiler flags for CCCL benchmark
+target_compile_options(bench_cccl
   PRIVATE
     $<$<COMPILE_LANGUAGE:CUDA>:--expt-extended-lambda --expt-relaxed-constexpr>
 )
