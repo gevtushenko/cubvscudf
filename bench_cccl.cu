@@ -28,15 +28,18 @@ cccl_iterator_t make_device_pointer_iterator(void *ptr,
 
 // Benchmark function for CCCL C API transform uppercase conversion
 void bench_cccl_transform_uppercase(nvbench::state &state) {
-  // Read CSV file on host (do this once, outside the timing loop)
+  // Get the number of elements from the axis parameter
+  const auto num_elements = static_cast<size_t>(state.get_int64("Elements"));
+  
+  // Read CSV file on host
   std::ifstream csv_file("lorem_ipsum.csv");
   if (!csv_file.is_open()) {
     state.skip("Could not open lorem_ipsum.csv");
     return;
   }
 
-  // Vector to store U8 values
-  std::vector<uint8_t> char_values;
+  // Vector to store original U8 values
+  std::vector<uint8_t> original_chars;
 
   // Skip header line
   std::string header;
@@ -46,11 +49,24 @@ void bench_cccl_transform_uppercase(nvbench::state &state) {
   std::string line;
   while (std::getline(csv_file, line)) {
     if (!line.empty()) {
-      char_values.push_back(static_cast<uint8_t>(line[0]));
+      original_chars.push_back(static_cast<uint8_t>(line[0]));
     }
   }
   csv_file.close();
 
+  if (original_chars.empty()) {
+    state.skip("No data read from CSV");
+    return;
+  }
+
+  // Repeat the data to reach desired element count
+  std::vector<uint8_t> char_values;
+  char_values.reserve(num_elements);
+  
+  for (size_t i = 0; i < num_elements; ++i) {
+    char_values.push_back(original_chars[i % original_chars.size()]);
+  }
+  
   const size_t num_chars = char_values.size();
   std::cout << "num_chars: " << num_chars << std::endl;
 
@@ -207,8 +223,9 @@ void bench_cccl_transform_uppercase(nvbench::state &state) {
   cudaFree(d_output);
 }
 
-// Register the benchmark
-NVBENCH_BENCH(bench_cccl_transform_uppercase);
+// Register the benchmark with Elements axis
+NVBENCH_BENCH(bench_cccl_transform_uppercase)
+  .add_int64_power_of_two_axis("Elements", {20, 24, 28});
 
 // Main function for nvbench
 NVBENCH_MAIN

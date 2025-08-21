@@ -22,15 +22,18 @@ void bench_transform_uppercase(nvbench::state &state) {
       &cuda_mr, rmm::percent_of_free_device_memory(50)};
   rmm::mr::set_current_device_resource_ref(mr);
 
-  // Read CSV file on host (do this once, outside the timing loop)
+  // Get the number of elements from the axis parameter
+  const auto num_elements = static_cast<size_t>(state.get_int64("Elements"));
+  
+  // Read CSV file on host
   std::ifstream csv_file("lorem_ipsum.csv");
   if (!csv_file.is_open()) {
     state.skip("Could not open lorem_ipsum.csv");
     return;
   }
 
-  // Vector to store U8 values
-  std::vector<uint8_t> char_values;
+  // Vector to store original U8 values
+  std::vector<uint8_t> original_chars;
 
   // Skip header line
   std::string header;
@@ -40,23 +43,26 @@ void bench_transform_uppercase(nvbench::state &state) {
   std::string line;
   while (std::getline(csv_file, line)) {
     if (!line.empty()) {
-      char_values.push_back(static_cast<uint8_t>(line[0]));
+      original_chars.push_back(static_cast<uint8_t>(line[0]));
     }
   }
   csv_file.close();
 
-  const size_t num_chars = char_values.size();
-  std::cout << "num_chars: " << num_chars << std::endl;
-
-  // If we don't have enough data, repeat what we have
-  size_t original_size = char_values.size();
-  if (original_size == 0) {
+  if (original_chars.empty()) {
     state.skip("No data read from CSV");
     return;
   }
 
-  // Truncate to exact size
-  char_values.resize(original_size);
+  // Repeat the data to reach desired element count
+  std::vector<uint8_t> char_values;
+  char_values.reserve(num_elements);
+  
+  for (size_t i = 0; i < num_elements; ++i) {
+    char_values.push_back(original_chars[i % original_chars.size()]);
+  }
+
+  const size_t num_chars = char_values.size();
+  std::cout << "num_chars: " << num_chars << std::endl;
 
   // Create cuDF column
   auto column = cudf::make_fixed_width_column(
@@ -146,8 +152,9 @@ void bench_transform_uppercase(nvbench::state &state) {
   }
 }
 
-// Register the benchmark
-NVBENCH_BENCH(bench_transform_uppercase);
+// Register the benchmark with Elements axis
+NVBENCH_BENCH(bench_transform_uppercase)
+  .add_int64_power_of_two_axis("Elements", {20, 24, 28});
 
 // Main function for nvbench
 NVBENCH_MAIN
