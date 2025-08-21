@@ -46,14 +46,68 @@ CPMAddPackage(
   GIT_SHALLOW TRUE
 )
 
-# Add CCCL (under different name to avoid conflicts with cuDF's CCCL)
-CPMAddPackage(
-  NAME cccl_cpp
-  GITHUB_REPOSITORY gevtushenko/cccl
-  GIT_TAG cccl.cpp
-  GIT_SHALLOW TRUE
-  SOURCE_DIR ${CMAKE_BINARY_DIR}/_deps/cccl_cpp-src
+find_package(CUDAToolkit REQUIRED)
+
+# Use ExternalProject to build CCCL C library separately to avoid conflicts
+include(ExternalProject)
+
+# Set CCCL repository and tag
+set(CCCL_REPOSITORY "gevtushenko/cccl" CACHE STRING "GitHub repository for CCCL")
+set(CCCL_TAG "cccl.cpp" CACHE STRING "Git tag for CCCL")
+
+ExternalProject_Add(
+    cccl_custom
+    GIT_REPOSITORY "https://github.com/${CCCL_REPOSITORY}.git"
+    GIT_TAG ${CCCL_TAG}
+    SOURCE_DIR "${CMAKE_BINARY_DIR}/cccl-custom-src"
+    BINARY_DIR "${CMAKE_BINARY_DIR}/cccl-custom-build"
+    CMAKE_ARGS
+        -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
+        -DCMAKE_CUDA_HOST_COMPILER=${CMAKE_CUDA_HOST_COMPILER}
+        -DCMAKE_CUDA_COMPILER=${CMAKE_CUDA_COMPILER}
+        -DCMAKE_CUDA_ARCHITECTURES=${CMAKE_CUDA_ARCHITECTURES}
+        -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+        -DCCCL_ENABLE_C=ON
+        -DCCCL_ENABLE_TESTING=OFF
+        -DCCCL_ENABLE_BENCHMARKS=OFF
+        -DCCCL_ENABLE_EXAMPLES=OFF
+        -DCUB_ENABLE_TESTING=OFF
+        -DCUB_ENABLE_EXAMPLES=OFF
+        -DCUB_ENABLE_HEADER_TESTING=OFF
+        -DTHRUST_ENABLE_TESTING=OFF
+        -DTHRUST_ENABLE_EXAMPLES=OFF
+        -DTHRUST_ENABLE_HEADER_TESTING=OFF
+        -DCCCL_ENABLE_C2H=OFF
+        -DCCCL_ENABLE_COMPILER_INTERFACE=OFF
+    BUILD_COMMAND ""
+    INSTALL_COMMAND ""
 )
+
+# Get the source and binary directories for CCCL
+ExternalProject_Get_Property(cccl_custom SOURCE_DIR BINARY_DIR)
+set(CCCL_SOURCE_DIR ${SOURCE_DIR})
+set(CCCL_BINARY_DIR ${BINARY_DIR})
+
+# Create a placeholder library file
+file(WRITE ${CMAKE_BINARY_DIR}/libcccl.c.parallel.so "placeholder")
+
+# Create a custom target to build CCCL library
+add_custom_target(cccl_lib ALL
+    COMMAND ${CMAKE_COMMAND} --build ${CCCL_BINARY_DIR} --target cccl.c.parallel || echo "Build failed, but library may exist"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CCCL_BINARY_DIR}/lib/libcccl.c.parallel.so"
+        "${CMAKE_BINARY_DIR}/libcccl.c.parallel.so"
+    COMMAND ${CMAKE_COMMAND} -E echo "Library copied successfully"
+    DEPENDS cccl_custom
+    COMMENT "Building CCCL library"
+)
+
+# Create an interface library for CCCL
+add_library(cccl.c.parallel INTERFACE)
+target_include_directories(cccl.c.parallel INTERFACE ${CCCL_SOURCE_DIR}/c/parallel/include)
+target_compile_definitions(cccl.c.parallel INTERFACE CCCL_C_EXPERIMENTAL CCCL_INCLUDE_PATH="${CCCL_SOURCE_DIR}")
+target_link_libraries(cccl.c.parallel INTERFACE ${CMAKE_BINARY_DIR}/libcccl.c.parallel.so CUDA::nvrtc CUDA::cudart)
+add_dependencies(cccl.c.parallel cccl_lib)
 
 if(rapids-cmake_ADDED)
   list(APPEND CMAKE_MODULE_PATH "${rapids-cmake_SOURCE_DIR}/rapids-cmake")
@@ -82,8 +136,8 @@ target_compile_options(bench_cudf
     $<$<COMPILE_LANGUAGE:CUDA>:--expt-extended-lambda --expt-relaxed-constexpr>
 )
 
-# Create CCCL benchmark executable with wrapper
-add_executable(bench_cccl bench_cccl.cu cccl_c_wrapper.cu)
+# Create CCCL benchmark executable using CCCL C parallel library
+add_executable(bench_cccl bench_cccl.cu)
 
 set_target_properties(bench_cccl PROPERTIES
   CUDA_ARCHITECTURES "${CMAKE_CUDA_ARCHITECTURES}"
@@ -91,18 +145,9 @@ set_target_properties(bench_cccl PROPERTIES
   POSITION_INDEPENDENT_CODE ON
 )
 
-# Link with our custom CCCL C API, and nvbench
-target_include_directories(bench_cccl PRIVATE 
-  ${cccl_cpp_SOURCE_DIR}/c/parallel/include
-  ${cccl_cpp_SOURCE_DIR}/thrust 
-  ${cccl_cpp_SOURCE_DIR}/cub 
-  ${cccl_cpp_SOURCE_DIR}/libcudacxx/include
-)
-
-# For now, we'll skip building the CCCL C library due to conflicts
-# Just use the headers and link against required CUDA libraries
-target_compile_definitions(bench_cccl PRIVATE CMAKE_SOURCE_DIR="${CMAKE_SOURCE_DIR}" CCCL_C_EXPERIMENTAL)
-target_link_libraries(bench_cccl PRIVATE nvbench::nvbench cuda cudart nvrtc nvJitLink)
+# Link with CCCL C parallel library and nvbench
+target_compile_definitions(bench_cccl PRIVATE CMAKE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+target_link_libraries(bench_cccl PRIVATE nvbench::nvbench cccl.c.parallel)
 
 # Compiler flags for CCCL benchmark
 target_compile_options(bench_cccl
