@@ -3,6 +3,7 @@
 #include <cudf/column/column_view.hpp>
 #include <cudf/table/table.hpp>
 #include <cudf/table/table_view.hpp>
+#include <cudf/transform.hpp>
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -71,14 +72,50 @@ int main() {
                num_to_print * sizeof(uint8_t), 
                cudaMemcpyDeviceToHost);
     
-    std::cout << "First 20 characters as string: ";
+    std::cout << "\nOriginal first 20 characters: ";
     for (uint8_t ch : first_chars) {
       std::cout << static_cast<char>(ch);
     }
     std::cout << std::endl;
     
-    std::cout << "First 20 UINT8 values: ";
-    for (uint8_t ch : first_chars) {
+    // Use cudf::transform to convert to uppercase
+    // Transform expression: if char is between 'a' (97) and 'z' (122), subtract 32
+    // Otherwise keep the same value
+    std::string transform_expr = 
+      "__device__ inline void f(uint8_t* output, uint8_t input) { "
+      "  *output = ((input >= 97) && (input <= 122)) ? (input - 32) : input; "
+      "}";
+    
+    std::vector<cudf::column_view> input_columns = {column->view()};
+    
+    auto uppercase_column = cudf::transform(
+      input_columns,
+      transform_expr,
+      cudf::data_type{cudf::type_id::UINT8},
+      false,  // is_ptx = false (CUDA code)
+      std::nullopt,  // no user data
+      stream,
+      mr
+    );
+    
+    std::cout << "\nTransformed to uppercase using cudf::transform" << std::endl;
+    std::cout << "Uppercase column has " << uppercase_column->size() << " rows" << std::endl;
+    
+    // Extract and print first 20 uppercase characters
+    std::vector<uint8_t> upper_chars(num_to_print);
+    cudaMemcpy(upper_chars.data(), 
+               uppercase_column->view().data<uint8_t>(), 
+               num_to_print * sizeof(uint8_t), 
+               cudaMemcpyDeviceToHost);
+    
+    std::cout << "Uppercase first 20 characters: ";
+    for (uint8_t ch : upper_chars) {
+      std::cout << static_cast<char>(ch);
+    }
+    std::cout << std::endl;
+    
+    std::cout << "Uppercase UINT8 values: ";
+    for (uint8_t ch : upper_chars) {
       std::cout << static_cast<int>(ch) << " ";
     }
     std::cout << std::endl;
