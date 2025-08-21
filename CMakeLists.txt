@@ -146,7 +146,6 @@ set_target_properties(bench_cccl PROPERTIES
 )
 
 # Link with CCCL C parallel library and nvbench
-target_compile_definitions(bench_cccl PRIVATE CMAKE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 target_link_libraries(bench_cccl PRIVATE nvbench::nvbench cccl.c.parallel)
 
 # Compiler flags for CCCL benchmark
