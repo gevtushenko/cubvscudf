@@ -6,6 +6,8 @@
 #include <vector>
 #include <iostream>
 #include <string>
+#include <cctype>
+#include <algorithm>
 
 // Helper to create iterator for device pointer
 cccl_iterator_t make_device_pointer_iterator(void* ptr, cccl_type_enum value_type) {
@@ -146,6 +148,58 @@ void bench_cccl_transform_uppercase(nvbench::state &state) {
     }
   });
 
+  // Verify the output after benchmark
+  std::vector<uint8_t> output_values(num_chars);
+  cudaMemcpy(output_values.data(), d_output, num_chars * sizeof(uint8_t), cudaMemcpyDeviceToHost);
+  
+  // Check a sample of values to verify uppercase transformation
+  bool verification_passed = true;
+  int errors_found = 0;
+  const int max_errors_to_report = 10;
+  
+  for (size_t i = 0; i < num_chars && errors_found < max_errors_to_report; ++i) {
+    uint8_t input_val = char_values[i];
+    uint8_t output_val = output_values[i];
+    uint8_t expected_val = ((input_val >= 97) && (input_val <= 122)) ? (input_val - 32) : input_val;
+    
+    if (output_val != expected_val) {
+      if (errors_found == 0) {
+        std::cout << "Verification errors found:" << std::endl;
+      }
+      std::cout << "  Index " << i << ": input=" << static_cast<char>(input_val) 
+                << " (" << static_cast<int>(input_val) << "), output=" << static_cast<char>(output_val)
+                << " (" << static_cast<int>(output_val) << "), expected=" << static_cast<char>(expected_val)
+                << " (" << static_cast<int>(expected_val) << ")" << std::endl;
+      verification_passed = false;
+      errors_found++;
+    }
+  }
+  
+  if (verification_passed) {
+    std::cout << "✓ Verification PASSED: All " << num_chars << " characters correctly transformed to uppercase" << std::endl;
+  } else {
+    std::cout << "✗ Verification FAILED: Found transformation errors" << std::endl;
+    if (errors_found >= max_errors_to_report) {
+      std::cout << "  (showing first " << max_errors_to_report << " errors only)" << std::endl;
+    }
+  }
+  
+  // Show a sample of the transformed text
+  std::cout << "Sample of transformed text (first 100 chars):" << std::endl;
+  std::cout << "  Input:  ";
+  for (size_t i = 0; i < std::min(size_t(100), num_chars); ++i) {
+    char c = static_cast<char>(char_values[i]);
+    std::cout << (isprint(c) ? c : '.');
+  }
+  std::cout << std::endl;
+  
+  std::cout << "  Output: ";
+  for (size_t i = 0; i < std::min(size_t(100), num_chars); ++i) {
+    char c = static_cast<char>(output_values[i]);
+    std::cout << (isprint(c) ? c : '.');
+  }
+  std::cout << std::endl;
+  
   // Clean up
   cccl_device_transform_cleanup(&build_result);
   cudaFree(d_input);

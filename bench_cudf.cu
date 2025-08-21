@@ -9,6 +9,9 @@
 #include <rmm/device_buffer.hpp>
 #include <rmm/mr/device/pool_memory_resource.hpp>
 #include <vector>
+#include <iostream>
+#include <cctype>
+#include <algorithm>
 
 // Benchmark function for cudf::transform uppercase conversion
 void bench_transform_uppercase(nvbench::state &state) {
@@ -77,12 +80,70 @@ void bench_transform_uppercase(nvbench::state &state) {
   state.add_global_memory_reads<uint8_t>(num_chars);
   state.add_global_memory_writes<uint8_t>(num_chars);
 
+  // Variable to store the result column
+  std::unique_ptr<cudf::column> result_column;
+  
   // Run the benchmark
   state.exec(nvbench::exec_tag::sync, [&](nvbench::launch &launch) {
-    cudf::transform(input_columns, transform_expr,
+    result_column = cudf::transform(input_columns, transform_expr,
                     cudf::data_type{cudf::type_id::UINT8}, false, std::nullopt,
                     rmm::cuda_stream_view{launch.get_stream()}, mr);
   });
+  
+  // Verify the output after benchmark
+  if (result_column) {
+    std::vector<uint8_t> output_values(num_chars);
+    cudaMemcpy(output_values.data(), result_column->view().data<uint8_t>(), 
+               num_chars * sizeof(uint8_t), cudaMemcpyDeviceToHost);
+    
+    // Check a sample of values to verify uppercase transformation
+    bool verification_passed = true;
+    int errors_found = 0;
+    const int max_errors_to_report = 10;
+    
+    for (size_t i = 0; i < num_chars && errors_found < max_errors_to_report; ++i) {
+      uint8_t input_val = char_values[i];
+      uint8_t output_val = output_values[i];
+      uint8_t expected_val = ((input_val >= 97) && (input_val <= 122)) ? (input_val - 32) : input_val;
+      
+      if (output_val != expected_val) {
+        if (errors_found == 0) {
+          std::cout << "Verification errors found:" << std::endl;
+        }
+        std::cout << "  Index " << i << ": input=" << static_cast<char>(input_val) 
+                  << " (" << static_cast<int>(input_val) << "), output=" << static_cast<char>(output_val)
+                  << " (" << static_cast<int>(output_val) << "), expected=" << static_cast<char>(expected_val)
+                  << " (" << static_cast<int>(expected_val) << ")" << std::endl;
+        verification_passed = false;
+        errors_found++;
+      }
+    }
+    
+    if (verification_passed) {
+      std::cout << "✓ Verification PASSED: All " << num_chars << " characters correctly transformed to uppercase" << std::endl;
+    } else {
+      std::cout << "✗ Verification FAILED: Found transformation errors" << std::endl;
+      if (errors_found >= max_errors_to_report) {
+        std::cout << "  (showing first " << max_errors_to_report << " errors only)" << std::endl;
+      }
+    }
+    
+    // Show a sample of the transformed text
+    std::cout << "Sample of transformed text (first 100 chars):" << std::endl;
+    std::cout << "  Input:  ";
+    for (size_t i = 0; i < std::min(size_t(100), num_chars); ++i) {
+      char c = static_cast<char>(char_values[i]);
+      std::cout << (isprint(c) ? c : '.');
+    }
+    std::cout << std::endl;
+    
+    std::cout << "  Output: ";
+    for (size_t i = 0; i < std::min(size_t(100), num_chars); ++i) {
+      char c = static_cast<char>(output_values[i]);
+      std::cout << (isprint(c) ? c : '.');
+    }
+    std::cout << std::endl;
+  }
 }
 
 // Register the benchmark
