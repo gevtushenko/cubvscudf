@@ -38,6 +38,14 @@ CPMAddPackage(
   DOWNLOAD_ONLY YES
 )
 
+# Add nvbench
+CPMAddPackage(
+  NAME nvbench
+  GITHUB_REPOSITORY NVIDIA/nvbench
+  GIT_TAG main
+  GIT_SHALLOW TRUE
+)
+
 if(rapids-cmake_ADDED)
   list(APPEND CMAKE_MODULE_PATH "${rapids-cmake_SOURCE_DIR}/rapids-cmake")
   include(rapids-cmake)
@@ -56,8 +64,8 @@ set_target_properties(cubvscudf PROPERTIES
   POSITION_INDEPENDENT_CODE ON
 )
 
-# Link with cuDF
-target_link_libraries(cubvscudf PRIVATE cudf::cudf)
+# Link with cuDF and nvbench
+target_link_libraries(cubvscudf PRIVATE cudf::cudf nvbench::nvbench)
 
 # Compiler flags
 target_compile_options(cubvscudf
